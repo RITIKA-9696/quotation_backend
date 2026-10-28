@@ -80,7 +80,7 @@ public class ProjectServiceImpl implements ProjectService {
                 parseStatus(f.getStatus()), f.getCustomerId(), f.getSearchOrNull(),
                 f.toPageable("createdAt,desc", SORT_FIELDS));
         Lookup lookup = lookup(page.getContent());
-        return PageResponse.of(page, p -> toResponse(p, lookup));
+        return PageResponse.of(page.map(p -> toResponse(p, lookup)));
     }
 
     @Override

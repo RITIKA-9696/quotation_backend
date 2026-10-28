@@ -51,4 +51,9 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     boolean existsByChannelPartnerIdAndMobileAndDeletedFalse(Long channelPartnerId, String mobile);
 
     boolean existsByChannelPartnerIdAndMobileAndDeletedFalseAndIdNot(Long channelPartnerId, String mobile, Long id);
+
+    @Query("select count(c) from Customer c where c.deleted = false "
+            + "and (:partnerId is null or c.channelPartnerId = :partnerId) "
+            + "and (:ownerId is null or c.createdBy = :ownerId)")
+    long countScoped(@Param("partnerId") Long partnerId, @Param("ownerId") Long ownerId);
 }

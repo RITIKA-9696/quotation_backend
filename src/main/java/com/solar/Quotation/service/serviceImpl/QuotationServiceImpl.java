@@ -109,7 +109,7 @@ public class QuotationServiceImpl implements QuotationService {
                 f.getCustomerId(), f.getReferred(), f.getFromDate(), f.getToDate(), f.getSearchOrNull(),
                 f.toPageable("createdAt,desc", SORT_FIELDS));
         ListLookup lookup = listLookup(page.getContent());
-        return PageResponse.of(page, q -> toListItem(q, lookup));
+        return PageResponse.of(page.map(q -> toListItem(q, lookup)));
     }
 
     @Override
@@ -350,6 +350,7 @@ public class QuotationServiceImpl implements QuotationService {
         q.setTaxableAmount(t.taxable);
         q.setSgstAmount(t.sgst);
         q.setCgstAmount(t.cgst);
+        q.setGstAmount(MoneyUtil.scale(t.sgst.add(t.cgst)));
         q.setTotalAmount(t.total);
 
         BigDecimal advance = MoneyUtil.scale(req.getAdvance());

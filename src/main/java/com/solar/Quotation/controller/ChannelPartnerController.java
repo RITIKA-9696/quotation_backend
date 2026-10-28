@@ -1,33 +1,21 @@
 package com.solar.Quotation.controller;
-import com.solar.Quotation.dto.requestdto.ChannelPartnerFilterRequestDto;
-import com.solar.Quotation.dto.requestdto.ChannelPartnerRequestDto;
-import com.solar.Quotation.dto.requestdto.ChannelPartnerStatusRequestDto;
-import com.solar.Quotation.dto.requestdto.UserFilterRequestDto;
-import com.solar.Quotation.dto.responsedto.ApiResponse;
-import com.solar.Quotation.dto.responsedto.ChannelPartnerResponseDto;
-import com.solar.Quotation.dto.responsedto.ChannelPartnerStatsResponseDto;
-import com.solar.Quotation.dto.responsedto.PageResponse;
-import com.solar.Quotation.dto.responsedto.PartnerOptionResponseDto;
-import com.solar.Quotation.dto.responsedto.UserResponseDto;
+
+import com.solar.Quotation.dto.requestdto.*;
+import com.solar.Quotation.dto.responsedto.*;
 import com.solar.Quotation.security.RequirePermission;
 import com.solar.Quotation.service.ChannelPartnerService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
  * Super Admin only (CHANNEL_PARTNER is a platform-only module).
- * Referral endpoints (/{id}/referrals and mark-paid) arrive with the referral module.
+ * Referral endpoints (/{id}/referrals and mark-paid) belong to the referral module.
  */
 @RestController
 @RequestMapping("/api/channel-partners")
@@ -88,5 +76,28 @@ public class ChannelPartnerController {
     @RequirePermission("CHANNEL_PARTNER:VIEW")
     public ApiResponse<PageResponse<UserResponseDto>> users(@PathVariable Long id, UserFilterRequestDto filter) {
         return ApiResponse.ok(service.users(id, filter));
+    }
+
+    @GetMapping("/{id}/referrals")
+    @RequirePermission("CHANNEL_PARTNER:VIEW")
+    public ResponseEntity<ApiResponse<PageResponse<ReferralActivityResponseDto>>> referrals(
+            @PathVariable Long id,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(ApiResponse.ok(service.getReferralActivity(
+                id, status, org.springframework.data.domain.PageRequest.of(
+                        page, size, org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Direction.DESC, "createdAt")))));
+    }
+
+    @PatchMapping("/{id}/referrals/{quotationId}/mark-paid")
+    @RequirePermission("CHANNEL_PARTNER:MARK_PAID")
+    public ResponseEntity<ApiResponse<Void>> markPaid(
+            @PathVariable Long id,
+            @PathVariable Long quotationId,
+            @jakarta.validation.Valid @RequestBody ReferralMarkPaidRequestDto req) {
+        service.markReferralPaid(id, quotationId, req);
+        return ResponseEntity.ok(ApiResponse.ok(null, "Referral marked paid"));
     }
 }

@@ -156,6 +156,9 @@ public class Quotation extends TenantBaseEntity {
     @Column(name = "cgst_amount", nullable = false, precision = 14, scale = 2)
     private BigDecimal cgstAmount = BigDecimal.ZERO;
 
+    @Column(name = "gst_amount", nullable = false, precision = 14, scale = 2)   // ← NEW
+    private BigDecimal gstAmount = BigDecimal.ZERO;
+
     @Column(name = "total_amount", nullable = false, precision = 14, scale = 2)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
@@ -167,6 +170,16 @@ public class Quotation extends TenantBaseEntity {
 
     @Column(name = "net_investment", nullable = false, precision = 14, scale = 2)
     private BigDecimal netInvestment = BigDecimal.ZERO;
+
+    // --- referral payout (added for the referral module) ---
+    @Column(name = "referral_paid_date")
+    private LocalDate referralPaidDate;
+
+    @Column(name = "referral_payment_ref", length = 60)
+    private String referralPaymentRef;
+
+    @Column(name = "referral_payment_remarks", length = 300)
+    private String referralPaymentRemarks;
 
     public String getCode() { return code; }
     public void setCode(String code) { this.code = code; }
@@ -250,6 +263,8 @@ public class Quotation extends TenantBaseEntity {
     public void setSgstAmount(BigDecimal sgstAmount) { this.sgstAmount = sgstAmount; }
     public BigDecimal getCgstAmount() { return cgstAmount; }
     public void setCgstAmount(BigDecimal cgstAmount) { this.cgstAmount = cgstAmount; }
+    public BigDecimal getGstAmount() { return gstAmount; }                    // ← NEW
+    public void setGstAmount(BigDecimal gstAmount) { this.gstAmount = gstAmount; }
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
     public BigDecimal getBalanceAmount() { return balanceAmount; }
@@ -258,4 +273,13 @@ public class Quotation extends TenantBaseEntity {
     public void setSubsidyAmount(BigDecimal subsidyAmount) { this.subsidyAmount = subsidyAmount; }
     public BigDecimal getNetInvestment() { return netInvestment; }
     public void setNetInvestment(BigDecimal netInvestment) { this.netInvestment = netInvestment; }
+    // --- getters/setters ---
+    public LocalDate getReferralPaidDate() { return referralPaidDate; }
+    public void setReferralPaidDate(LocalDate referralPaidDate) { this.referralPaidDate = referralPaidDate; }
+
+    public String getReferralPaymentRef() { return referralPaymentRef; }
+    public void setReferralPaymentRef(String referralPaymentRef) { this.referralPaymentRef = referralPaymentRef; }
+
+    public String getReferralPaymentRemarks() { return referralPaymentRemarks; }
+    public void setReferralPaymentRemarks(String referralPaymentRemarks) { this.referralPaymentRemarks = referralPaymentRemarks; }
 }

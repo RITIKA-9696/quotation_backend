@@ -98,7 +98,7 @@ public class AuditServiceImpl implements AuditService {
         Page<AuditLog> page = runSearch(f, partnerId, pageable);
         Map<Long, PartnerRefResponseDto> partners = partnerRefProvider.refs(
                 new HashSet<>(page.getContent().stream().map(AuditLog::getChannelPartnerId).toList()));
-        return PageResponse.of(page, a -> toResponse(a, true, partners));
+        return PageResponse.of(page.map(a -> toResponse(a, true, partners)));
     }
 
     @Override

@@ -2,18 +2,20 @@ package com.solar.Quotation.service.serviceImpl;
 
 import com.solar.Quotation.Enum.AuditAction;
 import com.solar.Quotation.Enum.PartnerType;
+import com.solar.Quotation.Enum.QuotationStatus;
 import com.solar.Quotation.Enum.RecordStatus;
+import com.solar.Quotation.exception.ApiException;
+import com.solar.Quotation.repository.QuotationRepository;
+import com.solar.Quotation.security.TenantResolver;
 import com.solar.Quotation.dto.requestdto.ChannelPartnerFilterRequestDto;
 import com.solar.Quotation.dto.requestdto.ChannelPartnerRequestDto;
 import com.solar.Quotation.dto.requestdto.ChannelPartnerStatusRequestDto;
+import com.solar.Quotation.dto.requestdto.ReferralMarkPaidRequestDto;
 import com.solar.Quotation.dto.requestdto.UserFilterRequestDto;
 import com.solar.Quotation.dto.requestdto.UserRequestDto;
-import com.solar.Quotation.dto.responsedto.ChannelPartnerResponseDto;
-import com.solar.Quotation.dto.responsedto.ChannelPartnerStatsResponseDto;
-import com.solar.Quotation.dto.responsedto.PageResponse;
-import com.solar.Quotation.dto.responsedto.PartnerOptionResponseDto;
-import com.solar.Quotation.dto.responsedto.UserResponseDto;
+import com.solar.Quotation.dto.responsedto.*;
 import com.solar.Quotation.entity.ChannelPartner;
+import com.solar.Quotation.entity.Quotation;
 import com.solar.Quotation.entity.Role;
 import com.solar.Quotation.exception.BusinessException;
 import com.solar.Quotation.exception.ResourceNotFoundException;
@@ -26,10 +28,13 @@ import com.solar.Quotation.service.UserService;
 import com.solar.Quotation.util.CodeGenerator;
 import com.solar.Quotation.util.DiffUtil;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,6 +50,8 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
     private static final String PARTNER_ADMIN = "CHANNEL_PARTNER_ADMIN";
     private static final Set<String> SORT_FIELDS = Set.of("createdAt", "name", "code", "status");
 
+    private final TenantResolver tenantResolver;
+    private final QuotationRepository quotationRepo;
     private final ChannelPartnerRepository partnerRepository;
     private final AppUserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -52,15 +59,103 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
     private final AuditService auditService;
     private final CodeGenerator codeGenerator;
 
-    public ChannelPartnerServiceImpl(ChannelPartnerRepository partnerRepository, AppUserRepository userRepository,
-                                     RoleRepository roleRepository, UserService userService,
-                                     AuditService auditService, CodeGenerator codeGenerator) {
+    public ChannelPartnerServiceImpl(TenantResolver tenantResolver,
+                                     QuotationRepository quotationRepo,
+                                     ChannelPartnerRepository partnerRepository,
+                                     AppUserRepository userRepository,
+                                     RoleRepository roleRepository,
+                                     UserService userService,
+                                     AuditService auditService,
+                                     CodeGenerator codeGenerator) {
+        this.tenantResolver = tenantResolver;
+        this.quotationRepo = quotationRepo;
         this.partnerRepository = partnerRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.userService = userService;
         this.auditService = auditService;
         this.codeGenerator = codeGenerator;
+    }
+
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ReferralActivityResponseDto> getReferralActivity(
+            Long partnerId, String status, org.springframework.data.domain.Pageable pageable) {
+
+        Long scoped = tenantResolver.effectivePartnerId(partnerId);
+        if (scoped == null) throw new ApiException(403, "partnerId required");
+
+        com.solar.Quotation.Enum.QuotationStatus st =
+                (status == null || status.isBlank())
+                        ? null
+                        : com.solar.Quotation.Enum.QuotationStatus.valueOf(status.trim().toUpperCase(java.util.Locale.ROOT));
+
+        org.springframework.data.domain.Page<Object[]> page =
+                quotationRepo.referralActivity(scoped, st, pageable);
+
+        return PageResponse.of(page.map(r -> {
+            ReferralActivityResponseDto d = new ReferralActivityResponseDto();
+            d.setQuotationId(((Number) r[0]).longValue());
+            d.setQuotationNo((String) r[1]);
+            d.setCustomer((String) r[2]);
+            d.setQuotationAmount((java.math.BigDecimal) r[3]);
+            d.setReferralPercent((java.math.BigDecimal) r[4]);
+            d.setReferralAmount((java.math.BigDecimal) r[5]);
+            d.setStatus(r[6] == null ? null : r[6].toString());
+            d.setDate(toLocalDate(r[7]));
+            d.setPaidDate(toLocalDate(r[8]));
+            return d;
+        }));
+    }
+
+    @Override
+    @Transactional
+    public void markReferralPaid(Long partnerId, Long quotationId,
+                                 com.solar.Quotation.dto.requestdto.ReferralMarkPaidRequestDto request) {
+
+        Long scoped = tenantResolver.effectivePartnerId(partnerId);
+        if (scoped == null) throw new ApiException(403, "partnerId required");
+
+        com.solar.Quotation.entity.Quotation q =
+                quotationRepo.findOne(quotationId, scoped, null)
+                        .orElseThrow(() -> new ApiException(404, "Quotation not found"));
+
+        if (q.getStatus() != com.solar.Quotation.Enum.QuotationStatus.APPROVED) {
+            throw new ApiException(400, "Only APPROVED referrals can be marked PAID");
+        }
+        if (q.getReferralPaidDate() != null) {
+            throw new ApiException(400, "Referral already marked paid");
+        }
+
+        java.util.Map<String, Object> before = new java.util.LinkedHashMap<>();
+        before.put("status", q.getStatus().name());
+        before.put("referralPaidDate", q.getReferralPaidDate());
+
+        q.setStatus(com.solar.Quotation.Enum.QuotationStatus.PAID);
+        q.setReferralPaidDate(request.getPaidDate());
+        q.setReferralPaymentRef(request.getPaymentRef());
+        q.setReferralPaymentRemarks(request.getRemarks());
+        quotationRepo.save(q);
+
+        java.util.Map<String, Object> after = new java.util.LinkedHashMap<>();
+        after.put("status", q.getStatus().name());
+        after.put("referralPaidDate", q.getReferralPaidDate());
+        after.put("referralPaymentRef", q.getReferralPaymentRef());
+        after.put("referralPaymentRemarks", q.getReferralPaymentRemarks());
+
+        auditService.record(com.solar.Quotation.Enum.AuditAction.MARK_PAID,
+                "CHANNEL_PARTNER", "Quotation", q.getId(), q.getCode(),
+                q.getChannelPartnerId(), com.solar.Quotation.util.DiffUtil.diff(before, after));
+    }
+
+    private java.time.LocalDate toLocalDate(Object o) {
+        if (o == null) return null;
+        if (o instanceof java.time.LocalDate ld) return ld;
+        if (o instanceof java.time.LocalDateTime ldt) return ldt.toLocalDate();
+        if (o instanceof java.sql.Date d) return d.toLocalDate();
+        if (o instanceof java.sql.Timestamp t) return t.toLocalDateTime().toLocalDate();
+        return null;
     }
 
     // ---------------------------------------------------------------- read
@@ -71,7 +166,6 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
         Page<ChannelPartner> page = partnerRepository.search(PartnerType.PARTNER, parseStatus(f.getStatus()),
                 f.getSearchOrNull(), f.toPageable("createdAt,desc", SORT_FIELDS));
 
-        // one grouped query for the user counts of the whole page
         Map<Long, Long> userCounts = new HashMap<>();
         List<Long> ids = page.getContent().stream().map(ChannelPartner::getId).toList();
         if (!ids.isEmpty()) {
@@ -79,7 +173,9 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
                 userCounts.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
             }
         }
-        return PageResponse.of(page, p -> toResponse(p, statsWithUsers(userCounts.getOrDefault(p.getId(), 0L))));
+        final Map<Long, Long> counts = userCounts;
+        return PageResponse.of(page.map(p ->
+                toResponse(p, statsWithUsers(counts.getOrDefault(p.getId(), 0L)))));
     }
 
     @Override
@@ -133,7 +229,6 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
         auditService.record(AuditAction.CREATE, "CHANNEL_PARTNER", "ChannelPartner", saved.getId(), saved.getCode(),
                 saved.getId(), DiffUtil.diff(null, snapshot(saved)));
 
-        // first admin user of the partner (password is generated; see UserResponseDto.temporaryPassword)
         UserRequestDto admin = new UserRequestDto();
         admin.setName(req.getAdminUser().getName());
         admin.setEmail(req.getAdminUser().getEmail());
@@ -179,12 +274,10 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
         p.setStatus(RecordStatus.valueOf(req.getStatus()));
         ChannelPartner saved = partnerRepository.save(p);
 
-        // Every user of an inactive partner is blocked by JwtAuthFilter on the very next request.
         auditService.record(AuditAction.STATUS_CHANGE, "CHANNEL_PARTNER", "ChannelPartner", saved.getId(),
                 saved.getCode(), saved.getId(), DiffUtil.diff(before, snapshot(saved)));
         return toResponse(saved, statsFor(saved.getId()));
     }
-
     // ---------------------------------------------------------------- helpers
 
     private ChannelPartner findPartner(Long id) {
@@ -206,9 +299,7 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
     }
 
     private RecordStatus parseStatus(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
+        if (value == null || value.isBlank()) return null;
         try {
             return RecordStatus.valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
@@ -226,7 +317,6 @@ public class ChannelPartnerServiceImpl implements ChannelPartnerService {
         return s;
     }
 
-    /** users is live. Add customers, projects, quotations and referral totals here when those modules exist. */
     private ChannelPartnerStatsResponseDto statsFor(Long partnerId) {
         return statsWithUsers(userRepository.countByChannelPartnerIdAndDeletedFalse(partnerId));
     }

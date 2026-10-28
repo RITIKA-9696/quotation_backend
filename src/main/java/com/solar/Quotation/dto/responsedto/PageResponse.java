@@ -3,7 +3,6 @@ package com.solar.Quotation.dto.responsedto;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
-import java.util.function.Function;
 
 public class PageResponse<T> {
 
@@ -13,16 +12,19 @@ public class PageResponse<T> {
     private long totalElements;
     private int totalPages;
 
-    public PageResponse() { }
+    public PageResponse() {}
 
-    public static <E, T> PageResponse<T> of(Page<E> p, Function<E, T> mapper) {
-        PageResponse<T> r = new PageResponse<>();
-        r.content = p.getContent().stream().map(mapper).toList();
-        r.page = p.getNumber();
-        r.size = p.getSize();
-        r.totalElements = p.getTotalElements();
-        r.totalPages = p.getTotalPages();
-        return r;
+    public PageResponse(List<T> content, int page, int size, long totalElements, int totalPages) {
+        this.content = content;
+        this.page = page;
+        this.size = size;
+        this.totalElements = totalElements;
+        this.totalPages = totalPages;
+    }
+
+    public static <T> PageResponse<T> of(Page<T> page) {
+        return new PageResponse<>(page.getContent(), page.getNumber(), page.getSize(),
+                page.getTotalElements(), page.getTotalPages());
     }
 
     public List<T> getContent() { return content; }

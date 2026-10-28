@@ -27,6 +27,7 @@ import com.solar.Quotation.security.TenantResolver;
 import com.solar.Quotation.service.AuditService;
 import com.solar.Quotation.service.CustomerService;
 import com.solar.Quotation.service.PartnerRefProvider;
+
 import com.solar.Quotation.util.AuditInfoMapper;
 import com.solar.Quotation.util.CodeGenerator;
 import com.solar.Quotation.util.DiffUtil;
@@ -89,7 +90,7 @@ public class CustomerServiceImpl implements CustomerService {
         Page<Customer> page = customerRepository.search(partnerId, ownerId, parseType(f.getType()),
                 parseStatus(f.getStatus()), f.getSearchOrNull(), f.toPageable("createdAt,desc", SORT_FIELDS));
         Lookup lookup = lookup(page.getContent());
-        return PageResponse.of(page, c -> toResponse(c, lookup));
+        return PageResponse.of(page.map(c -> toResponse(c, lookup)));
     }
 
     @Override
@@ -273,8 +274,14 @@ public class CustomerServiceImpl implements CustomerService {
             }
         }
         Map<Long, PartnerRefResponseDto> partners = partnerRefProvider.refs(partnerIds);
-        return PageResponse.of(page, x -> toFollowupResponse(x, customers.get(x.getCustomerId()),
-                partners.get(x.getChannelPartnerId()), today));
+        final Map<Long, Customer> customersFinal = customers;
+        final Map<Long, PartnerRefResponseDto> partnersFinal = partners;
+        final LocalDate todayFinal = today;
+        return PageResponse.of(page.map(x -> toFollowupResponse(
+                x,
+                customersFinal.get(x.getCustomerId()),
+                partnersFinal.get(x.getChannelPartnerId()),
+                todayFinal)));
     }
 
     @Override

@@ -58,8 +58,14 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             + "and p.customerId in :customerIds group by p.customerId")
     List<Object[]> countGroupedByCustomer(@Param("customerIds") Collection<Long> customerIds);
 
-    /** Newest first; the caller keeps the first project per customer (customer list "project" column). */
+    /** Newest first; the caller keeps the first project per customer. */
     @Query("select p from Project p where p.deleted = false and p.customerId in :customerIds "
             + "order by p.createdAt desc")
-    List<Project> findNewestForCustomers(@Param("customerIds") Collection<Long> customerIds);
+    java.util.List<Project> findNewestForCustomers(@Param("customerIds") java.util.Collection<Long> customerIds);
+
+    @Query("select count(p) from Project p where p.deleted = false "
+            + "and (:partnerId is null or p.channelPartnerId = :partnerId) "
+            + "and (:ownerId is null or p.createdBy = :ownerId)")
+    long countScoped(@Param("partnerId") Long partnerId,
+                     @Param("ownerId") Long ownerId);
 }

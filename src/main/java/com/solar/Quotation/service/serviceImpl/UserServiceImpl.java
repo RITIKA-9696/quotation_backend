@@ -96,7 +96,7 @@ public class UserServiceImpl implements UserService {
         Page<AppUser> page = userRepository.search(partnerId, roleId, status, f.getSearchOrNull(),
                 f.toPageable("createdAt,desc", SORT_FIELDS));
         Lookup lookup = lookup(page.getContent());
-        return PageResponse.of(page, u -> toResponse(u, lookup));
+        return PageResponse.of(page.map(u -> toResponse(u, lookup)));
     }
 
     @Override

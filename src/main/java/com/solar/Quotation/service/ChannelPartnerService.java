@@ -1,20 +1,15 @@
 package com.solar.Quotation.service;
 
-import com.solar.Quotation.dto.requestdto.ChannelPartnerFilterRequestDto;
-import com.solar.Quotation.dto.requestdto.ChannelPartnerRequestDto;
-import com.solar.Quotation.dto.requestdto.ChannelPartnerStatusRequestDto;
-import com.solar.Quotation.dto.requestdto.UserFilterRequestDto;
-import com.solar.Quotation.dto.responsedto.ChannelPartnerResponseDto;
-import com.solar.Quotation.dto.responsedto.ChannelPartnerStatsResponseDto;
-import com.solar.Quotation.dto.responsedto.PageResponse;
-import com.solar.Quotation.dto.responsedto.PartnerOptionResponseDto;
-import com.solar.Quotation.dto.responsedto.UserResponseDto;
+import com.solar.Quotation.dto.requestdto.*;
+import com.solar.Quotation.dto.responsedto.*;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
 public interface ChannelPartnerService {
 
     PageResponse<ChannelPartnerResponseDto> list(ChannelPartnerFilterRequestDto filter);
+
 
     List<PartnerOptionResponseDto> options();
 
@@ -30,4 +25,10 @@ public interface ChannelPartnerService {
     ChannelPartnerStatsResponseDto stats(Long id);
 
     PageResponse<UserResponseDto> users(Long id, UserFilterRequestDto filter);
+
+    com.solar.Quotation.dto.responsedto.PageResponse<com.solar.Quotation.dto.responsedto.ReferralActivityResponseDto>
+    getReferralActivity(Long partnerId, String status, org.springframework.data.domain.Pageable pageable);
+
+    void markReferralPaid(Long partnerId, Long quotationId,
+                          com.solar.Quotation.dto.requestdto.ReferralMarkPaidRequestDto request);
 }

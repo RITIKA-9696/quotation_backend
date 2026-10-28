@@ -82,7 +82,7 @@ public class ProductServiceImpl implements ProductService {
                 parseStatus(f.getStatus()), f.getGstPercent(), parseStockMode(f.getStockStatus()),
                 f.getSearchOrNull(), f.toPageable("createdAt,desc", SORT_FIELDS));
         Lookup lookup = lookup(page.getContent());
-        return PageResponse.of(page, p -> toResponse(p, lookup));
+        return PageResponse.of(page.map(p -> toResponse(p, lookup)));
     }
 
     @Override
