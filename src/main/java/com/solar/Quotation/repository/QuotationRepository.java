@@ -10,13 +10,12 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 public interface QuotationRepository extends JpaRepository<Quotation, Long> {
 
-    // ============================ EXISTING (keep as-is) ============================
+    // ============================ EXISTING ============================
     @Query("select q from Quotation q where q.id = :id and q.deleted = false "
             + "and (:partnerId is null or q.channelPartnerId = :partnerId) "
             + "and (:ownerId is null or q.createdBy = :ownerId)")
@@ -24,7 +23,10 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
                                 @Param("partnerId") Long partnerId,
                                 @Param("ownerId") Long ownerId);
 
-    @Query("select q from Quotation q where q.deleted = false " /* ... unchanged ... */)
+    @Query("select q from Quotation q where q.deleted = false "
+            + "and (:partnerId is null or q.channelPartnerId = :partnerId) "
+            + "and (:ownerId is null or q.createdBy = :ownerId) "
+            + "and (:status is null or q.status = :status)")
     Page<Quotation> search(@Param("partnerId") Long partnerId,
                            @Param("ownerId") Long ownerId,
                            @Param("status") QuotationStatus status,
@@ -64,12 +66,21 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
                                @Param("start") LocalDate start,
                                @Param("end") LocalDate end);
 
+    @Query("select count(q) from Quotation q where q.deleted = false "
+            + "and (:partnerId is null or q.channelPartnerId = :partnerId) "
+            + "and (:ownerId is null or q.createdBy = :ownerId) "
+            + "and q.quoteDate >= :start and q.quoteDate <= :end")
+    long countBetween(@Param("partnerId") Long partnerId,
+                      @Param("ownerId") Long ownerId,
+                      @Param("start") LocalDate start,
+                      @Param("end") LocalDate end);
+
     @Query("select q.status, count(q) from Quotation q where q.deleted = false "
             + "and (:partnerId is null or q.channelPartnerId = :partnerId) "
             + "and (:ownerId is null or q.createdBy = :ownerId) "
             + "group by q.status")
-    java.util.List<Object[]> countByStatusGrouped(@Param("partnerId") Long partnerId,
-                                                  @Param("ownerId") Long ownerId);
+    List<Object[]> countByStatusGrouped(@Param("partnerId") Long partnerId,
+                                        @Param("ownerId") Long ownerId);
 
     @Query("select case when q.systemSizeKw < 3 then '0-3 kw' "
             + "            when q.systemSizeKw < 10 then '3-10 kw' "
@@ -80,8 +91,8 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
             + "group by case when q.systemSizeKw < 3 then '0-3 kw' "
             + "              when q.systemSizeKw < 10 then '3-10 kw' "
             + "              else '10+ kw' end")
-    java.util.List<Object[]> sizeDistribution(@Param("partnerId") Long partnerId,
-                                              @Param("ownerId") Long ownerId);
+    List<Object[]> sizeDistribution(@Param("partnerId") Long partnerId,
+                                    @Param("ownerId") Long ownerId);
 
     @Query("select function('date_format', q.quoteDate, '%Y-%m'), count(q), coalesce(sum(q.totalAmount), 0) "
             + "from Quotation q where q.deleted = false "
@@ -91,15 +102,15 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
             + "and (:toDate is null or q.quoteDate <= :toDate) "
             + "group by function('date_format', q.quoteDate, '%Y-%m') "
             + "order by 1")
-    java.util.List<Object[]> monthlyTrend(@Param("partnerId") Long partnerId,
-                                          @Param("ownerId") Long ownerId,
-                                          @Param("fromDate") LocalDate fromDate,
-                                          @Param("toDate") LocalDate toDate);
+    List<Object[]> monthlyTrend(@Param("partnerId") Long partnerId,
+                                @Param("ownerId") Long ownerId,
+                                @Param("fromDate") LocalDate fromDate,
+                                @Param("toDate") LocalDate toDate);
 
     @Query("select q.channelPartnerId, count(q), coalesce(sum(q.totalAmount), 0) "
             + "from Quotation q where q.deleted = false and q.channelPartnerId is not null "
             + "group by q.channelPartnerId order by sum(q.totalAmount) desc")
-    java.util.List<Object[]> topPartnersByRevenue(Pageable pageable);
+    List<Object[]> topPartnersByRevenue(Pageable pageable);
 
     @Query("select coalesce(sum(q.referralAmount), 0) from Quotation q where q.deleted = false "
             + "and q.referralAmount is not null "
@@ -116,7 +127,17 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
     BigDecimal sumPendingReferralPayouts(@Param("partnerId") Long partnerId,
                                          @Param("ownerId") Long ownerId);
 
-// ============ REPORTS ============
+    @Query("select q.code, c.name, q.channelPartnerId, q.systemSizeKw, q.totalAmount, q.status, q.quoteDate "
+            + "from Quotation q, Customer c "
+            + "where q.customerId = c.id and q.deleted = false "
+            + "and (:partnerId is null or q.channelPartnerId = :partnerId) "
+            + "and (:ownerId is null or q.createdBy = :ownerId) "
+            + "order by q.createdAt desc, q.id desc")
+    List<Object[]> recent(@Param("partnerId") Long partnerId,
+                          @Param("ownerId") Long ownerId,
+                          Pageable pageable);
+
+    // ============ REPORTS ============
 
     @Query("select count(q), "
             + "  sum(case when q.status = com.solar.Quotation.Enum.QuotationStatus.ACCEPTED then 1 else 0 end), "
@@ -179,9 +200,10 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
                              Pageable pageable);
 
     @Query("select q.referredBy, c.name, q.totalAmount, "
-            + "       q.referralPercent, q.referralAmount, q.status "
+            + "       q.referralPercent, q.referralAmount, q.status, cp.name "
             + "from Quotation q "
             + "left join Customer c on c.id = q.customerId "
+            + "left join ChannelPartner cp on cp.id = q.channelPartnerId "
             + "where q.deleted = false "
             + "and q.referralAmount is not null "
             + "and (:partnerId is null or q.channelPartnerId = :partnerId) "
@@ -198,21 +220,24 @@ public interface QuotationRepository extends JpaRepository<Quotation, Long> {
                                         @Param("toDate") LocalDate toDate,
                                         Pageable pageable);
 
-    @Query("select q.createdBy, max(q.referredBy), count(q), "
+    // YAHAN USER KI JAGAH APP_USER USE KIYA HAI
+    @Query("select q.createdBy, u.name, count(q), "
             + "       sum(case when q.status = com.solar.Quotation.Enum.QuotationStatus.ACCEPTED then 1 else 0 end) "
-            + "from Quotation q where q.deleted = false "
+            + "from Quotation q "
+            + "left join AppUser u on u.id = q.createdBy "
+            + "where q.deleted = false "
             + "and (:partnerId is null or q.channelPartnerId = :partnerId) "
             + "and (:ownerId is null or q.createdBy = :ownerId) "
             + "and (:fromDate is null or q.quoteDate >= :fromDate) "
             + "and (:toDate is null or q.quoteDate <= :toDate) "
-            + "group by q.createdBy order by count(q) desc")
+            + "group by q.createdBy, u.name order by count(q) desc")
     Page<Object[]> topPerformers(@Param("partnerId") Long partnerId,
                                  @Param("ownerId") Long ownerId,
                                  @Param("fromDate") LocalDate fromDate,
                                  @Param("toDate") LocalDate toDate,
                                  Pageable pageable);
 
-// ============ REFERRAL ACTIVITY ============
+    // ============ REFERRAL ACTIVITY ============
 
     @Query("select q.id, q.code, c.name, q.totalAmount, "
             + "       q.referralPercent, q.referralAmount, q.status, q.quoteDate, q.referralPaidDate "

@@ -4,12 +4,16 @@ import com.solar.Quotation.Enum.AuditAction;
 import com.solar.Quotation.dto.requestdto.CalculationFilterRequestDto;
 import com.solar.Quotation.dto.requestdto.CalculationRequestDto;
 import com.solar.Quotation.dto.responsedto.CalculationResponseDto;
+import com.solar.Quotation.dto.responsedto.CustomerResponseDto;
 import com.solar.Quotation.dto.responsedto.PageResponse;
+import com.solar.Quotation.dto.responsedto.ProjectResponseDto;
 import com.solar.Quotation.entity.ChannelPartner;
 import com.solar.Quotation.entity.CostCalculation;
 import com.solar.Quotation.exception.ApiException;
 import com.solar.Quotation.repository.ChannelPartnerRepository;
 import com.solar.Quotation.repository.CostCalculationRepository;
+import com.solar.Quotation.repository.CustomerRepository;
+import com.solar.Quotation.repository.ProjectRepository;
 import com.solar.Quotation.security.TenantResolver;
 import com.solar.Quotation.service.AuditService;
 import com.solar.Quotation.service.CalculatorService;
@@ -24,7 +28,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class CalculatorServiceImpl implements CalculatorService {
@@ -34,24 +40,93 @@ public class CalculatorServiceImpl implements CalculatorService {
     private final TenantResolver tenantResolver;
     private final AuditService auditService;
     private final CodeGenerator codeGenerator;
+    private final CustomerRepository customerRepo;
+    private final ProjectRepository projectRepo;
 
     public CalculatorServiceImpl(CostCalculationRepository calcRepo,
                                  ChannelPartnerRepository partnerRepo,
                                  TenantResolver tenantResolver,
                                  AuditService auditService,
+                                 CustomerRepository customerRepo,  // <-- YEH ADD KARO
+                                 ProjectRepository projectRepo,
                                  CodeGenerator codeGenerator) {
+
+
         this.calcRepo = calcRepo;
         this.partnerRepo = partnerRepo;
         this.tenantResolver = tenantResolver;
         this.auditService = auditService;
         this.codeGenerator = codeGenerator;
+        this.customerRepo = customerRepo; // <-- YEH ADD KARO
+        this.projectRepo = projectRepo;
+    }
+
+    @Override
+    public List<CustomerResponseDto> getAllCustomers() {
+        // Note: CustomerRepository ke method ka naam aapke project ke hisaab se alag ho sakta hai (jaise findByDeletedFalse())
+        return customerRepo.findAll().stream()
+                .filter(c -> !c.isDeleted()) // soft delete handle karne ke liye
+                .map(c -> {
+                    CustomerResponseDto dto = new CustomerResponseDto();
+                    dto.setId(c.getId());
+                    dto.setName(c.getName()); // Aapke entity me jo field ho (e.g., customerName)
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ProjectResponseDto> getAllProjects() {
+        return projectRepo.findAll().stream()
+                .filter(p -> !p.isDeleted())
+                .map(p -> {
+                    ProjectResponseDto dto = new ProjectResponseDto();
+                    dto.setId(p.getId());
+                    dto.setName(p.getName()); // Aapke entity me jo field ho (e.g., projectName)
+                    return dto;
+                })
+                .collect(Collectors.toList());
     }
 
     @Override
     public CalculationResponseDto preview(CalculationRequestDto req) {
+        // Preview is stateless; partner is only needed for persistence.
         Long partnerId = tenantResolver.effectivePartnerId(req.getPartnerId());
+        return buildPreview(req, partnerId);   // partnerId may be null here
+    }
+
+    @Override
+    @Transactional
+    public CalculationResponseDto update(Long id, CalculationRequestDto req) {
+        // 1. Pehle current user ka partner nikaalo
+        Long partnerId = tenantResolver.effectivePartnerId(req.getPartnerId());
+
+        // 2. Agar req me partnerId nahi hai (null hai), toh purane record se partnerId nikaal lo
+        if (partnerId == null) {
+            CostCalculation existing = calcRepo.findById(id)
+                    .orElseThrow(() -> new ApiException(404, "Calculation not found"));
+            partnerId = existing.getChannelPartnerId();
+        }
+
         if (partnerId == null) throw new ApiException(403, "partnerId required");
-        return buildPreview(req, partnerId);
+
+        CostCalculation e = calcRepo.findOne(id, partnerId, tenantResolver.ownerFilter())
+                .orElseThrow(() -> new ApiException(404, "Calculation not found"));
+
+        Map<String, Object> before = snapshot(e);
+
+        // Enum casing fix (agar frontend se galat case aa raha ho)
+        if (req.getProjectType() != null) {
+            req.setProjectType(req.getProjectType());
+        }
+
+        apply(e, req);
+        CostCalculation saved = calcRepo.save(e);
+
+        auditService.record(AuditAction.UPDATE, "CALCULATOR", "CostCalculation",
+                saved.getId(), saved.getCode(), saved.getChannelPartnerId(),
+                DiffUtil.diff(before, snapshot(saved)));
+        return toDto(saved);
     }
 
     @Override
@@ -69,25 +144,6 @@ public class CalculatorServiceImpl implements CalculatorService {
         auditService.record(AuditAction.CREATE, "CALCULATOR", "CostCalculation",
                 saved.getId(), saved.getCode(), saved.getChannelPartnerId(),
                 DiffUtil.diff(null, snapshot(saved)));
-        return toDto(saved);
-    }
-
-    @Override
-    @Transactional
-    public CalculationResponseDto update(Long id, CalculationRequestDto req) {
-        Long partnerId = tenantResolver.effectivePartnerId(req.getPartnerId());
-        if (partnerId == null) throw new ApiException(403, "partnerId required");
-
-        CostCalculation e = calcRepo.findOne(id, partnerId, tenantResolver.ownerFilter())
-                .orElseThrow(() -> new ApiException(404, "Calculation not found"));
-
-        Map<String, Object> before = snapshot(e);
-        apply(e, req);
-        CostCalculation saved = calcRepo.save(e);
-
-        auditService.record(AuditAction.UPDATE, "CALCULATOR", "CostCalculation",
-                saved.getId(), saved.getCode(), saved.getChannelPartnerId(),
-                DiffUtil.diff(before, snapshot(saved)));
         return toDto(saved);
     }
 
@@ -197,27 +253,25 @@ public class CalculatorServiceImpl implements CalculatorService {
         d.setCapacityKw(e.getCapacityKw());
         d.setProjectType(e.getProjectType());
         d.setCreatedAt(e.getCreatedAt() == null ? Instant.now() : toInstant(e.getCreatedAt()));
-        d.setPartner(partnerRef(e.getChannelPartnerId()));
 
-        CalculationResponseDto.Costs c = new CalculationResponseDto.Costs();
-        c.setMaterial(e.getMaterialCost());
-        c.setInstallation(e.getInstallationCost());
-        c.setTransportation(e.getTransportationCost());
-        c.setCivil(e.getCivilCost());
-        c.setLabour(e.getLabourCost());
-        c.setElectrical(e.getElectricalCost());
-        c.setOther(e.getOtherCost());
-        c.setDiscount(e.getDiscount());
-        d.setCosts(c);
+        d.setPartnerId(e.getChannelPartnerId());
+        d.setPartnerName(partnerName(e.getChannelPartnerId()));
 
-        CalculationResponseDto.Result r = new CalculationResponseDto.Result();
-        r.setSubtotal(e.getSubtotal());
-        r.setGstPercent(e.getGstPercent());
-        r.setGstAmount(e.getGstAmount());
-        r.setGrandTotal(e.getGrandTotal());
-        r.setCostPerKw(e.getCostPerKw());
-        r.setEstimatedSaving(e.getEstimatedSaving());
-        d.setResult(r);
+        d.setMaterialCost(nz(e.getMaterialCost()));
+        d.setInstallationCost(nz(e.getInstallationCost()));
+        d.setTransportationCost(nz(e.getTransportationCost()));
+        d.setCivilCost(nz(e.getCivilCost()));
+        d.setLabourCost(nz(e.getLabourCost()));
+        d.setElectricalCost(nz(e.getElectricalCost()));
+        d.setOtherCost(nz(e.getOtherCost()));
+        d.setDiscount(nz(e.getDiscount()));
+
+        d.setSubtotal(nz(e.getSubtotal()));
+        d.setGstPercent(nz(e.getGstPercent()));
+        d.setGstAmount(nz(e.getGstAmount()));
+        d.setFinalCost(nz(e.getGrandTotal()));      // <-- map grandTotal -> finalCost
+        d.setCostPerKw(nz(e.getCostPerKw()));
+        d.setEstimatedSaving(nz(e.getEstimatedSaving()));
         return d;
     }
 
@@ -238,39 +292,33 @@ public class CalculatorServiceImpl implements CalculatorService {
         d.setCapacityKw(r.getCapacityKw());
         d.setProjectType(r.getProjectType());
         d.setCreatedAt(Instant.now());
-        d.setPartner(partnerRef(partnerId));
+        d.setPartnerId(partnerId);
+        d.setPartnerName(partnerName(partnerId));
 
-        CalculationResponseDto.Costs c = new CalculationResponseDto.Costs();
-        c.setMaterial(nz(r.getMaterialCost()));
-        c.setInstallation(nz(r.getInstallationCost()));
-        c.setTransportation(nz(r.getTransportationCost()));
-        c.setCivil(nz(r.getCivilCost()));
-        c.setLabour(nz(r.getLabourCost()));
-        c.setElectrical(nz(r.getElectricalCost()));
-        c.setOther(nz(r.getOtherCost()));
-        c.setDiscount(nz(r.getDiscount()));
-        d.setCosts(c);
+        d.setMaterialCost(nz(r.getMaterialCost()));
+        d.setInstallationCost(nz(r.getInstallationCost()));
+        d.setTransportationCost(nz(r.getTransportationCost()));
+        d.setCivilCost(nz(r.getCivilCost()));
+        d.setLabourCost(nz(r.getLabourCost()));
+        d.setElectricalCost(nz(r.getElectricalCost()));
+        d.setOtherCost(nz(r.getOtherCost()));
+        d.setDiscount(nz(r.getDiscount()));
 
-        CalculationResponseDto.Result res = new CalculationResponseDto.Result();
-        res.setSubtotal(subtotal);
-        res.setGstPercent(nz(r.getGstPercent()));
-        res.setGstAmount(gst);
-        res.setGrandTotal(total);
-        res.setCostPerKw(perKw);
-        res.setEstimatedSaving(BigDecimal.ZERO);
-        d.setResult(res);
+        d.setSubtotal(subtotal);
+        d.setGstPercent(nz(r.getGstPercent()));
+        d.setGstAmount(gst);
+        d.setFinalCost(total);                       // <-- finalCost
+        d.setCostPerKw(perKw);
+        d.setEstimatedSaving(BigDecimal.ZERO);
         return d;
     }
 
-    private CalculationResponseDto.PartnerRef partnerRef(Long partnerId) {
+    private String partnerName(Long partnerId) {
         if (partnerId == null) return null;
-        ChannelPartner cp = partnerRepo.findById(partnerId).orElse(null);
-        if (cp == null) return null;
-        CalculationResponseDto.PartnerRef pr = new CalculationResponseDto.PartnerRef();
-        pr.setId(cp.getId());
-        pr.setName(cp.getName());
-        return pr;
+        return partnerRepo.findById(partnerId).map(ChannelPartner::getName).orElse(null);
     }
+
+
 
     private Instant toInstant(Object createdAt) {
         if (createdAt instanceof Instant i) return i;

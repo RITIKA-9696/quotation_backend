@@ -2,9 +2,7 @@ package com.solar.Quotation.controller;
 
 import com.solar.Quotation.dto.requestdto.CalculationFilterRequestDto;
 import com.solar.Quotation.dto.requestdto.CalculationRequestDto;
-import com.solar.Quotation.dto.responsedto.ApiResponse;
-import com.solar.Quotation.dto.responsedto.CalculationResponseDto;
-import com.solar.Quotation.dto.responsedto.PageResponse;
+import com.solar.Quotation.dto.responsedto.*;
 import com.solar.Quotation.security.RequirePermission;
 import com.solar.Quotation.service.CalculatorService;
 import jakarta.validation.Valid;
@@ -13,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Locale;
 
 @RestController
@@ -63,7 +62,8 @@ public class CalculatorController {
         return ResponseEntity.ok(ApiResponse.ok(service.create(req), "Calculation created"));
     }
 
-    @PutMapping("/{id}")
+    // Purana: @PutMapping("/{id}")
+    @PatchMapping("/{id}")  // <-- Yahan PATCH kar do
     @RequirePermission("CALCULATOR:EDIT")
     public ResponseEntity<ApiResponse<CalculationResponseDto>> update(
             @PathVariable Long id, @Valid @RequestBody CalculationRequestDto req) {
@@ -75,5 +75,20 @@ public class CalculatorController {
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         service.delete(id);
         return ResponseEntity.ok(ApiResponse.ok(null, "Calculation deleted"));
+    }
+
+    // CalculatorController.java ke andar (class ke andar)
+    @GetMapping("/dropdown/customers")
+    @RequirePermission("CALCULATOR:VIEW")
+    public ResponseEntity<ApiResponse<List<CustomerResponseDto>>> getCustomersForDropdown() {
+        // Yahan service se saare customers fetch karlo
+        return ResponseEntity.ok(ApiResponse.ok(service.getAllCustomers()));
+    }
+
+    @GetMapping("/dropdown/projects")
+    @RequirePermission("CALCULATOR:VIEW")
+    public ResponseEntity<ApiResponse<List<ProjectResponseDto>>> getProjectsForDropdown() {
+        // Yahan service se saare projects fetch karlo
+        return ResponseEntity.ok(ApiResponse.ok(service.getAllProjects()));
     }
 }

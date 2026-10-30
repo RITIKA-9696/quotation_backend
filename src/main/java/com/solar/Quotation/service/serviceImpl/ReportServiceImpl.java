@@ -46,10 +46,20 @@ public class ReportServiceImpl implements ReportService {
     }
 
     private Pageable pageable(ReportFilterRequestDto f) {
-        String[] p = f.getSort() == null || f.getSort().isBlank()
-                ? new String[]{"createdAt", "desc"} : f.getSort().split(",");
+        String sortStr = f.getSort() == null || f.getSort().isBlank() ? "quoteDate,desc" : f.getSort();
+        String[] p = sortStr.split(",");
+        String field = p[0];
+
+        // Frontend keys ko Entity fields me map karo
+        if ("createdAt".equals(field)) field = "quoteDate";
+        if ("referrerName".equals(field)) field = "referredBy";
+        if ("customer".equals(field)) field = "customerId";
+        if ("quotationAmount".equals(field)) field = "totalAmount";
+        if ("acceptedQuotations".equals(field)) field = "status";
+        // Add any other missing mappings here
+
         Sort.Direction dir = p.length > 1 && "asc".equalsIgnoreCase(p[1]) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return PageRequest.of(f.getPage(), f.getSize(), Sort.by(dir, p[0]));
+        return PageRequest.of(f.getPage(), f.getSize(), Sort.by(dir, field));
     }
 
     @Override
@@ -57,7 +67,7 @@ public class ReportServiceImpl implements ReportService {
         Object[] r = quotationRepo.reportSummary(
                 partner(f), owner(), status(f.getStatus()), f.getSalesUserId(), f.getFrom(), f.getTo());
         ReportSummaryResponseDto d = new ReportSummaryResponseDto();
-        if (r != null) {
+        if (r != null && r.length > 0) {
             d.setTotalQuotations(r[0] == null ? 0L : ((Number) r[0]).longValue());
             d.setAccepted(r[1] == null ? 0L : ((Number) r[1]).longValue());
             d.setPending(r[2] == null ? 0L : ((Number) r[2]).longValue());
@@ -124,6 +134,7 @@ public class ReportServiceImpl implements ReportService {
             d.setReferralPercent((BigDecimal) r[3]);
             d.setReferralAmount((BigDecimal) r[4]);
             d.setStatus(r[5] == null ? null : r[5].toString());
+            d.setPartnerName(r.length > 6 && r[6] != null ? (String) r[6] : null);
             return d;
         }));
     }
@@ -136,7 +147,7 @@ public class ReportServiceImpl implements ReportService {
         return PageResponse.of(page.map(r -> {
             ReportRowResponseDto.Performer d = new ReportRowResponseDto.Performer();
             d.setUserId(r[0] == null ? null : ((Number) r[0]).longValue());
-            d.setName((String) r[1]);
+            d.setName((String) r[1]); // <-- FIXED: u.name aa raha hai
             d.setQuotes(r[2] == null ? 0L : ((Number) r[2]).longValue());
             d.setAccepted(r[3] == null ? 0L : ((Number) r[3]).longValue());
             d.setRatePercent(d.getQuotes() > 0

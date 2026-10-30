@@ -5,11 +5,11 @@ import java.time.LocalDate;
 
 public class ReportRowResponseDto {
 
-    // ---- Quotation row ----
     public static class Quotation {
         private String quoteNo, customer, salesPerson, status, partnerName;
         private BigDecimal systemSizeKw, amount;
         private LocalDate date;
+
         public String getQuoteNo() { return quoteNo; }
         public void setQuoteNo(String v) { this.quoteNo = v; }
         public String getCustomer() { return customer; }
@@ -28,7 +28,6 @@ public class ReportRowResponseDto {
         public void setPartnerName(String v) { this.partnerName = v; }
     }
 
-    // ---- GST row ----
     public static class Gst {
         private String quoteNo, customer;
         private BigDecimal taxableAmount, gstPercent, cgstAmount, sgstAmount, gstAmount, total;
@@ -53,9 +52,8 @@ public class ReportRowResponseDto {
         public void setDate(LocalDate v) { this.date = v; }
     }
 
-    // ---- Referral income row ----
     public static class ReferralIncome {
-        private String referrerName, referredCustomer, status;
+        private String referrerName, referredCustomer, status, partnerName;
         private BigDecimal quotationAmount, referralPercent, referralAmount;
         public String getReferrerName() { return referrerName; }
         public void setReferrerName(String v) { this.referrerName = v; }
@@ -69,9 +67,10 @@ public class ReportRowResponseDto {
         public void setReferralAmount(BigDecimal v) { this.referralAmount = v; }
         public String getStatus() { return status; }
         public void setStatus(String v) { this.status = v; }
+        public String getPartnerName() { return partnerName; }
+        public void setPartnerName(String v) { this.partnerName = v; }
     }
 
-    // ---- Top performer row ----
     public static class Performer {
         private Long userId, quotes, accepted;
         private String name;
